@@ -1,9 +1,3 @@
-"""
-init_data.py
-過去1年分のUSD/JPYデータ（1時間足）を取得してCSVを初期化する。
-実行: python scripts/init_data.py
-"""
-
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
@@ -30,10 +24,15 @@ def fetch_hourly_data() -> pd.DataFrame:
     if df.empty:
         raise RuntimeError("データを取得できませんでした。")
 
-    df = df.reset_index()
-    df.columns = [c.lower() for c in df.columns]
+    # MultiIndex カラムをフラット化
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0].lower() for col in df.columns]
+    else:
+        df.columns = [c.lower() for c in df.columns]
 
-    # datetime列名の統一（yfinanceはバージョンにより異なる）
+    df = df.reset_index()
+
+    # timestamp列名の統一
     for col in ("datetime", "date", "index"):
         if col in df.columns:
             df = df.rename(columns={col: "timestamp"})
