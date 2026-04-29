@@ -2,8 +2,7 @@
 
 // ── 設定 ────────────────────────────────────────────────
 const CSV_URL =
-  "https://raw.githubusercontent.com/SuperDaisy2025/fx-dashboard/main/data/usdjpy_10min.csv";
-
+  "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/data/usdjpy_10min.csv";
 
 const RANGE_OPTIONS = [
   { label: "1D",  hours: 24 },
@@ -110,6 +109,7 @@ function renderChart() {
 
   chart = new Chart(ctx, {
     type: "line",
+    plugins: [mondayPlugin],
     data: {
       labels,
       datasets: [
@@ -161,7 +161,7 @@ function renderChart() {
           },
           grid: { color: "rgba(255,255,255,0.04)" },
           ticks: {
-            color: "#4a5568",
+            color: "#8892a4",
             maxTicksLimit: 8,
             maxRotation: 0,
           },
@@ -170,7 +170,7 @@ function renderChart() {
         y: {
           position: "right",
           grid:  { color: "rgba(255,255,255,0.04)" },
-          ticks: { color: "#4a5568" },
+          ticks: { color: "#8892a4" },
           border: { color: "rgba(255,255,255,0.06)" },
         },
       },
@@ -178,7 +178,56 @@ function renderChart() {
   });
 }
 
-// ── レンジ切替 ──────────────────────────────────────────
+// ── 月曜日補助線プラグイン ──────────────────────────────
+const mondayPlugin = {
+  id: "mondayLines",
+  afterDraw(chartInstance) {
+    const { hours } = RANGE_OPTIONS[activeIdx];
+    // 1W未満は補助線不要
+    if (hours < 168) return;
+
+    const xScale = chartInstance.scales.x;
+    const yScale = chartInstance.scales.y;
+    const ctx2   = chartInstance.ctx;
+    const top    = yScale.top;
+    const bottom = yScale.bottom;
+
+    const sliced = getSlicedData();
+    const seen   = new Set();
+
+    sliced.forEach((d) => {
+      // 月曜日 (getDay() === 1) かつ 00:00〜00:09 のデータで1本だけ描く
+      if (d.t.getDay() !== 1) return;
+      const dateKey = d.t.toISOString().slice(0, 10);
+      if (seen.has(dateKey)) return;
+      seen.add(dateKey);
+
+      const x = xScale.getPixelForValue(d.t.getTime());
+      if (x < xScale.left || x > xScale.right) return;
+
+      // 補助線
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.moveTo(x, top);
+      ctx2.lineTo(x, bottom);
+      ctx2.strokeStyle = "rgba(0, 212, 170, 0.2)";
+      ctx2.lineWidth   = 1;
+      ctx2.setLineDash([4, 4]);
+      ctx2.stroke();
+
+      // 日付ラベル
+      const label = `${d.t.getMonth() + 1}/${d.t.getDate()}`;
+      ctx2.setLineDash([]);
+      ctx2.fillStyle = "rgba(0, 212, 170, 0.6)";
+      ctx2.font      = "10px monospace";
+      ctx2.textAlign = "center";
+      ctx2.fillText(label, x, top - 4);
+      ctx2.restore();
+    });
+  },
+};
+
+
 function setRange(idx) {
   activeIdx = idx;
   document.querySelectorAll(".range-btn").forEach((btn, i) => {
