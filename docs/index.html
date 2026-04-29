@@ -26,7 +26,7 @@
       --accent:   #00d4aa;
       --accent2:  #3b82f6;
       --text:     #e8eaf0;
-      --muted:    #4a5568;
+      --muted:    #8892a4;
       --positive: #00d4aa;
       --negative: #f87171;
       --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
@@ -133,43 +133,49 @@
     /* ── 統計カード ─────────────────────────────────────── */
     .stats-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 12px;
-      padding: 20px 0;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      padding: 8px 0;
     }
 
     .stat-card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 8px;
-      padding: 14px 16px;
+      padding: 7px 8px;
     }
 
     .stat-label {
-      font-size: 11px;
+      font-size: 10px;
       color: var(--muted);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      margin-bottom: 6px;
+      letter-spacing: 0.05em;
+      margin-bottom: 3px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .stat-value {
       font-family: var(--font-mono);
-      font-size: 22px;
+      font-size: 15px;
       font-weight: 600;
       color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     .stat-value.positive { color: var(--positive); }
     .stat-value.negative { color: var(--negative); }
 
     #stat-price {
-      font-size: 28px;
+      font-size: 19px;
       color: var(--accent);
     }
 
     #stat-updated {
-      font-size: 13px;
+      font-size: 10px;
       color: var(--muted);
     }
 
@@ -268,9 +274,13 @@
 
     /* ── レスポンシブ ───────────────────────────────────── */
     @media (max-width: 480px) {
-      .stats-grid { grid-template-columns: 1fr 1fr; }
-      #stat-price { font-size: 22px; }
-      .stat-value { font-size: 16px; }
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+      #stat-price { font-size: 16px; }
+      .stat-value { font-size: 13px; }
+      #stat-updated { font-size: 9px; }
+      header { padding: 10px 0 8px; }
+      .logo-main { font-size: 15px; }
+    }
     }
   </style>
 </head>
