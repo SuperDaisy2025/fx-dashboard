@@ -19,24 +19,37 @@ def fetch_hourly_data() -> pd.DataFrame:
         interval="1h",
         auto_adjust=True,
         progress=False,
+        group_by="column",
     )
 
-    if df.empty:
-        raise RuntimeError("データを取得できませんでした。")
+    print("取得直後のカラム:", df.columns.tolist())
+    print("インデックス名:", df.index.name)
 
-    # MultiIndex カラムをフラット化
+    # MultiIndex をフラット化
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = [col[0].lower() for col in df.columns]
     else:
         df.columns = [c.lower() for c in df.columns]
 
-    df = df.reset_index()
+    print("フラット化後のカラム:", df.columns.tolist())
 
-    # timestamp列名の統一
-    for col in ("datetime", "date", "index"):
+    # インデックス（日時）を列に変換
+    df = df.reset_index()
+    df.columns = [c.lower() if isinstance(c, str) else c for c in df.columns]
+
+    print("reset_index後のカラム:", df.columns.tolist())
+
+    # timestamp列を特定
+    for col in ("datetime", "date", "price", "index"):
         if col in df.columns:
             df = df.rename(columns={col: "timestamp"})
             break
+
+    # 最初の列がtimestampでない場合は強制的にリネーム
+    if "timestamp" not in df.columns:
+        df = df.rename(columns={df.columns[0]: "timestamp"})
+
+    print("最終カラム:", df.columns.tolist())
 
     df = df[["timestamp", "open", "high", "low", "close", "volume"]]
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True).dt.strftime(
