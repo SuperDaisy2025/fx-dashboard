@@ -2,7 +2,7 @@
 
 // ── 設定 ────────────────────────────────────────────────
 const CSV_URL =
-  "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/data/usdjpy_10min.csv";
+  "https://raw.githubusercontent.com/SuperDaisy2025/fx-dashboard/main/data/usdjpy_10min.csv";
 
 const RANGE_OPTIONS = [
   { label: "1D",  hours: 24 },
