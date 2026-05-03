@@ -1,347 +1,86 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#0a0e1a" />
-  <meta name="description" content="USD/JPY 為替レートダッシュボード" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <title>FX Dashboard｜USD/JPY</title>
-  <link rel="manifest" href="./manifest.json" />
+import yfinance as yf
+import pandas as pd
+from datetime import datetime, timedelta
+from pathlib import Path
 
-  <!-- Chart.js + Luxon (time adapter) -->
-  <script src="https://cdn.jsdelivr.net/npm/luxon@3/build/global/luxon.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+OUTPUT_PATH = Path("data/usdjpy_10min.csv")
+TICKER = "JPY=X"
+LOOKBACK_DAYS = 5
 
-  <style>
-    /* ── リセット & ベース ─────────────────────────────── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --bg:       #0a0e1a;
-      --surface:  #111827;
-      --border:   rgba(255,255,255,0.06);
-      --accent:   #00d4aa;
-      --accent2:  #3b82f6;
-      --text:     #e8eaf0;
-      --muted:    #a0aec0;
-      --positive: #00d4aa;
-      --negative: #f87171;
-      --font-mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-    }
+def fetch_recent_5min() -> pd.DataFrame:
+    end = datetime.utcnow()
+    start = end - timedelta(days=LOOKBACK_DAYS)
+    print(f"取得範囲: {start.date()} ～ {end.date()}  (5分足)")
 
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
-      font-size: 14px;
-      line-height: 1.5;
-      -webkit-font-smoothing: antialiased;
-    }
+    df = yf.download(
+        TICKER,
+        start=start.strftime("%Y-%m-%d"),
+        end=end.strftime("%Y-%m-%d"),
+        interval="5m",
+        auto_adjust=True,
+        progress=False,
+    )
 
-    /* ── グリッドノイズ背景 ─────────────────────────────── */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(rgba(0,212,170,0.015) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(0,212,170,0.015) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-      z-index: 0;
-    }
+    if df.empty:
+        raise RuntimeError("データを取得できませんでした。")
 
-    /* ── レイアウト ─────────────────────────────────────── */
-    .app {
-      position: relative;
-      z-index: 1;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 0 16px;
-    }
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = [col[0].lower() for col in df.columns]
+    else:
+        df.columns = [c.lower() for c in df.columns]
 
-    /* ── ヘッダー ───────────────────────────────────────── */
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 20px 0 16px;
-      border-bottom: 1px solid var(--border);
-    }
+    df = df.reset_index()
+    df.columns = [c.lower() if isinstance(c, str) else c for c in df.columns]
 
-    .logo {
-      display: flex;
-      align-items: baseline;
-      gap: 8px;
-    }
+    for col in ("datetime", "date", "price", "index"):
+        if col in df.columns:
+            df = df.rename(columns={col: "timestamp"})
+            break
 
-    .logo-main {
-      font-family: var(--font-mono);
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--accent);
-      letter-spacing: 0.05em;
-    }
+    if "timestamp" not in df.columns:
+        df = df.rename(columns={df.columns[0]: "timestamp"})
 
-    .logo-sub {
-      font-size: 11px;
-      color: var(--muted);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
+    df = df[["timestamp", "open", "high", "low", "close", "volume"]]
+    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    return df
 
-    /* ── ステータスバー ─────────────────────────────────── */
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-    }
 
-    .status-bar::before {
-      content: '';
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
+def resample_to_10min(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.set_index("timestamp").sort_index()
+    resampled = df.resample("10min").agg(
+        {
+            "open": "first",
+            "high": "max",
+            "low": "min",
+            "close": "last",
+            "volume": "sum",
+        }
+    ).dropna(subset=["open"])
+    resampled = resampled.reset_index()
+    resampled["timestamp"] = resampled["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
+    return resampled
 
-    .status-bar.loading::before {
-      background: #f59e0b;
-      animation: pulse 1s infinite;
-    }
 
-    .status-bar.ok::before     { background: var(--accent); }
-    .status-bar.error::before  { background: var(--negative); }
+def merge_and_save(new_df: pd.DataFrame):
+    if OUTPUT_PATH.exists():
+        existing = pd.read_csv(OUTPUT_PATH)
+        merged = pd.concat([existing, new_df], ignore_index=True)
+    else:
+        print("⚠️  既存CSVが見つかりません。新規作成します。")
+        merged = new_df
 
-    .status-bar.ok     .status-text { color: var(--muted); }
-    .status-bar.error  .status-text { color: var(--negative); }
-    .status-bar.loading .status-text { color: #f59e0b; }
+    merged = merged.drop_duplicates(subset="timestamp")
+    merged = merged.sort_values("timestamp")
+    merged.to_csv(OUTPUT_PATH, index=False)
+    print(f"✅ CSV更新完了: {OUTPUT_PATH}  (合計 {len(merged)} 行)")
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50%       { opacity: 0.4; }
-    }
 
-    /* ── 統計カード ─────────────────────────────────────── */
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 6px;
-      padding: 8px 0;
-    }
+def main():
+    raw = fetch_recent_5min()
+    resampled = resample_to_10min(raw)
+    merge_and_save(resampled)
 
-    .stat-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 7px 8px;
-    }
 
-    .stat-label {
-      font-size: 10px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 3px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .stat-value {
-      font-family: var(--font-mono);
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .stat-value.positive { color: var(--positive); }
-    .stat-value.negative { color: var(--negative); }
-
-    #stat-price {
-      font-size: 19px;
-      color: var(--accent);
-    }
-
-    #stat-updated {
-      font-size: 10px;
-      color: var(--muted);
-    }
-
-    /* ── チャートエリア ─────────────────────────────────── */
-    .chart-section {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 16px;
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .chart-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-
-    .chart-title {
-      font-size: 12px;
-      color: var(--muted);
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    /* ── レンジボタン ───────────────────────────────────── */
-    #range-buttons {
-      display: flex;
-      gap: 4px;
-    }
-
-    .range-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      font-family: var(--font-mono);
-      font-size: 11px;
-      padding: 4px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-
-    .range-btn:hover { border-color: var(--accent); color: var(--accent); }
-
-    .range-btn.active {
-      background: rgba(0,212,170,0.12);
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    /* ── キャンバス ─────────────────────────────────────── */
-    .chart-wrap {
-      position: relative;
-      height: 380px;
-    }
-
-    @media (max-height: 700px) { .chart-wrap { height: 280px; } }
-
-    /* ── リフレッシュボタン ─────────────────────────────── */
-    #refresh-btn {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-      font-size: 14px;
-    }
-
-    #refresh-btn:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    /* ── フッター ───────────────────────────────────────── */
-    footer {
-      padding: 12px 0;
-      text-align: center;
-      font-size: 11px;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-      margin-bottom: 16px;
-    }
-
-    /* ── レスポンシブ ───────────────────────────────────── */
-    @media (max-width: 480px) {
-      .stats-grid { grid-template-columns: repeat(3, 1fr); }
-      #stat-price { font-size: 16px; }
-      .stat-value { font-size: 13px; }
-      #stat-updated { font-size: 9px; }
-      header { padding: 10px 0 8px; }
-      .logo-main { font-size: 15px; }
-    }
-    }
-  </style>
-</head>
-<body>
-  <div class="app">
-
-    <!-- ヘッダー -->
-    <header>
-      <div class="logo">
-        <span class="logo-main">FX Dashboard</span>
-        <span class="logo-sub">USD / JPY</span>
-      </div>
-      <div id="status-bar" class="status-bar loading">
-        <span class="status-text">初期化中…</span>
-      </div>
-    </header>
-
-    <!-- 統計カード -->
-    <div class="stats-grid">
-      <div class="stat-card">
-        <div class="stat-label">現在値</div>
-        <div class="stat-value" id="stat-price">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">前足比</div>
-        <div class="stat-value" id="stat-change">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">24H 高値</div>
-        <div class="stat-value" id="stat-high">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">24H 安値</div>
-        <div class="stat-value" id="stat-low">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">最終更新（JST）</div>
-        <div class="stat-value" id="stat-updated">—</div>
-      </div>
-    </div>
-
-    <!-- チャート -->
-    <div class="chart-section">
-      <div class="chart-toolbar">
-        <span class="chart-title">終値 (10分足)</span>
-        <div style="display:flex;align-items:center;gap:8px;">
-          <div id="range-buttons"></div>
-          <button id="refresh-btn" title="データを再取得">↺</button>
-        </div>
-      </div>
-      <div class="chart-wrap">
-        <canvas id="fx-chart"></canvas>
-      </div>
-    </div>
-
-    <footer>
-      データ: Yahoo Finance (yfinance) ／ 自動更新: GitHub Actions ／ 10分足・UTC基準
-    </footer>
-
-  </div>
-
-  <script src="./app.js"></script>
-</body>
-</html>
+if __name__ == "__main__":
+    main()
